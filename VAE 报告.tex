@@ -1,0 +1,285 @@
+\documentclass[UTF8]{ctexart}
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{graphics}
+\usepackage{epstopdf}
+\usepackage{cases}
+\usepackage{pifont}
+\usepackage{amssymb} 
+\usepackage{geometry}
+\usepackage{bm}
+\usepackage{subfigure}
+\usepackage{caption}
+\usepackage{cite}
+\captionsetup{font={scriptsize}}
+\CTEXsetup[format={\Large\bfseries}]{section}
+\geometry{left=3.2cm,right=2.8cm,top=2.5cm,bottom=2.5cm}
+\DeclareMathOperator\dif{d\!}
+\newcommand*{\bb}[1]{\mathbf{#1}}
+\newcommand\degree{^\circ}
+\newcommand\mi{\mathrm{i}}
+\newcommand\me{\mathrm{e}}
+\DeclareMathOperator\sgn{sgn}
+\title{VAE寒假大作业报告}
+\author{19341158 赵洋}
+\begin{document}
+\maketitle
+\section{引言}
+VAE(变分自编码器)\cite{1312.6114}是一种强大的生成模型，应用于无监督的机器学习中。它的核心思想是利用
+简单的MLP(比如DNN，CNN等)来解码潜在变量与可见变量的关系，然后用一个编码器的后验
+概率来近似代替该解码器潜在变量的后验概率。在这个过程中引入了随机采样过程，这提高了模型对真实
+噪声的鲁棒性。
+\section{VAE原理介绍和公式推导}
+\subsection{证据下界ELBO}
+假设有一个可见数据集$\mathbf X=\{\mathbf{x}^{(i)}\}_{i=1}^N$,和它有关的潜在变量为$\mathbf{z}$
+。假设可见变量和潜在变量的关系完全能够由一个MLP决定，$\bm{\theta}$代表这个MLP的参数集合，则$\mathbf{x}^{(i)}$
+应该由分布$p_{\theta^*}(\bb x|\bb z)$产生，$p_{\bm\theta}(\bb z)$是潜在变量$\bb z$的先验分布，其中${\theta^*}\in\bm{\theta}$。现在无论是${\theta^*}$
+还是$\bb z^{(i)}$对于我们来说都是未知的，所以隐变量的分布也应该是未知的。但是由于MLP能够模拟出任何两个分布之间的变换，
+所以我们可以假设$\bb z$是一种简单的分布的形式(比如说相互独立的高斯分布)。MLP先把$\bb z$分布变成实际隐变量的分布，最后再
+变成$\bb x$的分布。这样就能够任意假设$\bb z$的概率分布形式，这对于以后的模型搭建和计算是有益的。
+
+对于一个模型，我们选取参数$\bm\theta$的标准应该是最大化对数似然函数$\log p_{\bm\theta}(\bb x^{(1)},\cdots,\bb x^{(N)})=\sum^N_{i=1}\log p_{\bm\theta}(\bb x^{(i)})$。
+对于其中的一个数据点，对数似然函数为$\log p_{\bm\theta}(\bb x^{(i)})$。如果是监督模型，我们可以通过贝叶斯公式
+得到$\log p_{\bm\theta}(\bb x^{(i)},\bb z)=\log  p_{\bm\theta}(\bb z|\bb x^{(i)})p(\bb x^{(i)})$来计算这个函数。
+但是对于无监督模型，我们无法直接得到$p_{\bm\theta}(\bb z|\bb x^{(i)})$，所以需要增加一个MLP作为编码器来近似。假设这个编码器的参数集合为$\bm\phi$
+,我们想要这个参数使得$p_{\bm\theta}(\bb z| \bb x^{(i)})\approx q_{\bm\phi}(\bb z| \bb x^{(i)})$，可以用KL散度来衡量这两个函数的近似程度
+\[
+  D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z| \bb x^{(i)}))=\int q_{\bm\phi}(\bb z| \bb x^{(i)})\log \frac{q_{\bm\phi}(\bb z| \bb x^{(i)})}{p_{\bm\theta}(\bb z| \bb x^{(i)})} \dif \bb z
+\]
+根据吉布斯不等式，这个值永远大于等于零，而且当且仅当$q_{\bm\phi}(\bb z| \bb x^{(i)})=p_{\bm\theta}(\bb z| \bb x^{(i)})$时这个值才为零。通过变分计算，我们可以得出
+\[
+  \log p_{\bm\theta}(\bb x^{(i)}) = D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z| \bb x^{(i)})) + \mathcal{L}(\bm \theta,\bm \phi;\bb x^{(i)})
+\]
+即
+\[
+  \mathcal{L}(\bm \theta,\bm \phi;\bb x^{(i)}) =log p_{\bm\theta}(\bb x^{(i)})-D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z| \bb x^{(i)}))  
+\]
+$ \mathcal{L}(\bm \theta,\bm \phi;\bb x^{(i)})$被称为证据下界ELBO，很明显ELBO就是对数极大似然概率的下界，所以我们想要将它优化到最大化。将ELBO变形得到
+\begin{align*}
+  \mathcal{L}(\bm \theta,\bm \phi;\bb x^{(i)}) &= -\int q_{\bm\phi}(\bb z|\bb x^{(i)})\log \frac{q_{\bm\phi}(\bb z|\bb x^{(i)})}{p_{\bm\theta}(\bb z| \bb x^{(i)})} \dif \bb z +log p_{\bm\theta}(\bb x^{(i)})\\
+  &= -\int q_{\bm\phi}(\bb z|\bb x^{(i)})\log \frac{q_{\bm\phi}(\bb z|\bb x^{(i)})p_{\bm\theta}(\bb x^{(i)})}{p_{\bm\theta}(\bb x^{(i)}|z)p_{\bm\theta}(\bb z)} \dif \bb z +log p_{\bm\theta}(\bb x^{(i)})\\
+  &= -\int q_{\bm\phi}(\bb z| \bb x^{(i)})\log \frac{q_{\bm\phi}(\bb z| \bb x^{(i)})}{p_{\bm\theta}(\bb z)} \dif \bb z -\int q_{\bm\phi}(\bb z| \bb x^{(i)})\log p_{\bm\theta}(\bb x^{(i)})\dif \bb z+\\
+  &\phantom{==}\int q_{\bm\phi}(\bb z| \bb x^{(i)})\log p_{\bm\theta}(\bb x^{(i)}|\bb z)\dif \bb z+log p_{\bm\theta}(\bb x^{(i)})\\
+  &=-D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z))+\int q_{\bm\phi}(\bb z| \bb x^{(i)})\log p_{\bm\theta}(\bb x^{(i)}|\bb z)\dif \bb z -\\
+  &\phantom{==}log p_{\bm\theta}(\bb x^{(i)})\int q_{\bm\phi}(\bb z| \bb x^{(i)})\dif \bb z+log p_{\bm\theta}(\bb x^{(i)})\\
+  &=-D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z)) + \mathbb{E}_{q_{\bm\phi}(\bb z| \bb x^{(i)})}\left[ \log p_{\bm\theta}(\bb x^{(i)}|\bb z) \right]\\
+\end{align*}
+这个等式就可以用于计算ELBO，但是由于等式中的$\bb z$都是通过一个由$\bb x^{(i)}$和$\bm\theta$决定的分布采样得到的，如果用直接用蒙特卡洛法进行梯度计算，所得的结果的方差会非常大。所以作者这里提出了一个叫
+重参数化方法(Reparameterization trick)的过程来优化这个函数。
+\subsection{重参数化Reparameterization trick}
+重参数化的核心思想是把一个分布随参数变化的随机变量分离成一个分布固定的随机变量和变量参数的函数组合，
+即令随机变量$\tilde{\bb z}=g_{\bm \phi}(\bm\epsilon,\bb x^{(i)})$,其中$\bm\epsilon \sim p(\bb \epsilon)$使得
+\begin{gather*}
+  \mathbb{E}_{q_{\bm\phi}(\bb z|\bb x^{(i)})}\left[ f(\bb z) \right] = \mathbb{E}_{p(\bm \epsilon)}\left[ f(g_{\bm \phi}(\bm\epsilon,\bb x^{(i)})) \right]\approx \frac 1L\sum^L_{l=1} f(g_{\bm \phi}(\bm\epsilon^{(i,l)},\bb x^{(i)})) 
+  \quad\text{其中}\quad\bm\epsilon \sim p(\bm \epsilon)
+\end{gather*}
+后面的约等于是用蒙特卡洛方法采样得到的近似值,如果minbatch的大小足够大时，$L$可以取1。
+于是近似的ELBO变成了
+\begin{gather*}
+  \mathcal{L}'(\bm \theta,\bm \phi;\bb x^{(i)})\approx-D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z)) + \frac 1L\sum^L_{l=1} \log p_{\bm\theta}(\bb x^{(i)}|\bb z^{(l)})\\  
+  \text{其中}\quad \bb z^{l}=g_{\bm \phi}(\bm\epsilon,\bb x^{(i)}) ,\bm\epsilon \sim p(\bm \epsilon)\\
+\end{gather*}
+我们可以发现ELBO的第二项实际就是解码器的对数似然函数，也是解码器的损失函数。如果数据是$\{0,1\}$分布损失函数就是sigmoid交叉熵，如果是连续
+高斯分布的就是平方损失函数，如果是多项式分布就是softmax交叉熵形式。
+
+然后我们来计算$g_{\bm \phi}(\bm\epsilon,\bb x^{(i)})$和$p(\bb \epsilon)$满足的条件
+\begin{gather*}
+  \mathbb{E}_{q_{\bm\phi}(\bb z|\bb x^{(i)})}\left[ f(\bb z) \right] = \int q_{\bm\phi}(\bb z|\bb x^{(i)})f(\bb z^{(i)})\dif \bb z=\int q_{\bm\phi}(\bb z|\bb x^{(i)})\det\left|{\frac{\partial \bb z}{\partial \bm\epsilon}}\right|f(g_{\bm \phi}(\bm\epsilon,\bb x^{(i)}))\dif \bm\epsilon\\
+  \mathbb{E}_{p(\bm \epsilon)}\left[ f(g_{\bm \phi}(\bm\epsilon,\bb x^{(i)})) \right]=\int p(\bm \epsilon)f(g_{\bm \phi}(\bm\epsilon,\bb x^{(i)})) \dif \bm \epsilon\\
+  \text{故}\quad q_{\bm\phi}(\bb z|\bb x^{(i)})\det\left|{\frac{\partial \bb z}{\partial \bm\epsilon}}\right|=p(\bm \epsilon)\\
+  \text{即}\quad \log q_{\bm\phi}(\bb z|\bb x^{(i)}) = \log p(\bm \epsilon) -\log \det\left|{\frac{\partial \bb z}{\partial \bm\epsilon}}\right|\\
+\end{gather*}
+
+如果$\bb z$的后验分布是相互独立的高斯分布，即$\bb z^{(i,l)}\sim q_{\bm\phi}(\bb z|\bb x^{(i)})=\mathcal{N}(\bb z;\bm \mu^{(i)},\bm \sigma^{2(i)}\bb I )$，其中$\bm \mu^{(i)}$和$\bm \sigma^{(i)}$取决于
+$\bm \phi$和样本的数据，$\bb z$的先验概率为标准高斯分布$p_{\bm\theta}(\bb z)\sim \mathcal{N} (\bb 0,\bb I)$。可以令$g_{\bm \phi}(\bm\epsilon,\bb x^{(i)}) = \bm\mu^{(i)}+\bm\sigma^{(i)}\bm\epsilon,\quad\bm\epsilon\sim\mathcal{N} (\bb 0,\bb I)$，这样
+显然能明显满足上面的条件。
+
+然后KL散度也能被解析地表达出来
+\begin{align*}
+  D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z)) &=\sum^J_{j=1}D_{KL}(q_{\bm\phi}(z_j| \bb x^{(i)})||p_{\bm\theta}(z_j))
+  =\sum^J_{j=1}\int q_{\bm\phi}(z_j| \bb x^{(i)})\log \frac{q_{\bm\phi}(z_j| \bb x^{(i)})}{p_{\bm\theta}(z_j)} \dif z_j\\
+  &=\sum^J_{j=1}\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\log
+  \frac{\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}}{\frac 1{\sqrt{2\pi}}\exp{\left[-\frac{z_j^2}{2}\right]}}\dif z_j\\
+  &=\sum^J_{j=1}\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\left[-\log\sigma_j-\frac{(z_j-\mu_j)^2}{2\sigma^2_j}+\frac{z_j^2}{2}\right]\dif z_j\\
+  &=\sum^J_{j=1}\left\{-\log\sigma_j+\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\left[-\frac{(z_j-\mu_j)^2}{2\sigma^2_j}+\frac{z_j^2}{2}\right]\dif z_j\right\}\\
+\end{align*}
+$J$是$z$的维度数，积分中的第一项是
+\begin{align*}
+  -\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\frac{(z_j-\mu_j)^2}{2\sigma^2_j}\dif z_j
+  &=-\int\frac 1{\sqrt{2\pi}}\frac{t^2}{2}\exp{\left(-\frac{t^2}{2}\right)}\dif z_j \quad\text{其中}\quad t=\frac{z_j-\mu_j}{\sigma_j} \\
+  &=-\frac 1{4\sqrt{2\pi}}\sqrt{\frac{\pi}{{\left(\frac{1}{2}\right)}^3}}=-\frac12
+\end{align*}
+第二项是
+\begin{align*}
+  \int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\frac{z_j^2}{2}\dif z_j
+  &=\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left[-\frac{(z_j-\mu_j)^2}{2\sigma_j^2}\right]}\left[\frac{(z_j-\mu_j)^2+2(z_j-\mu_j)+\mu_j^2}{2}\right]\dif z_j\\
+  &=\int\frac 1{\sqrt{2\pi}\sigma_j}\exp{\left(-\frac{t}2\right)}\left[\frac{t^2\sigma_j^2+2t\sigma_j+\mu_j^2}{2}\right]\dif z_j\\
+  &=\sigma_j^2\frac 1{4\sqrt{2\pi}}\sqrt{\frac{\pi}{{\left(\frac{1}{2}\right)}^3}}+0+\frac{\mu^2_j}{2}
+  =\frac12(\sigma_j^2+\mu^2_j)
+\end{align*}
+综合起来
+\begin{align*}
+  D_{KL}(q_{\bm\phi}(\bb z| \bb x^{(i)})||p_{\bm\theta}(\bb z))&=\sum^J_{j=1}\left(-\log\sigma_j+\frac12(\sigma^2_j+\mu^2_j-1)\right)\\
+  &=\frac12\sum\left(\mu^2_j+\sigma^2_j-\log\sigma^2_j-1\right)
+\end{align*}
+最终的证据下界ELBO为
+\begin{align*}
+  \mathcal{L}'(\bm \theta,\bm \phi;\bb x^{(i)})=\frac12\sum^J_{j=1}\left(1+\log\sigma^2_j-\mu^2_j-\sigma^2_j\right)+\frac 1L\sum^L_{l=1} \log p_{\bm\theta}(\bb x^{(i)}|\bb z^{(l)})\\
+\end{align*}
+如果假设潜在变量后验分布是参数为$\mathcal{C} \left(\bm\gamma,\bm\mu\right)$的柯西分布，先验分布是标准柯西分布，则计算的ELBO为
+\begin{align*}
+  \mathcal{L}'(\bm \theta,\bm \phi;\bb x^{(i)})&=\sum^J_{j=1}\left[\log\gamma_j+2\log2-\log\left(\left(\mu^2_j-\gamma^2_j+1\right)^2+4\gamma_j^2\mu_j^2\right)+\log\left(\left(\gamma_j-1\right)^2+\mu^2_j\right)\right]\\
+  &\phantom{==}+\frac 1L\sum^L_{l=1} \log p_{\bm\theta}(\bb x^{(i)}|\bb z^{(l)})\\
+\end{align*}
+\section{实验过程}
+根据理论的推导后，就可以制作出如图1的VAE结构示意图。根据该示意图，我先搭建了一个解码器和编码器都是简单的单隐藏层DNN的VAE，数据集用MNIST。对于网络的各种参数，我进行了
+下面的实验探索。
+\begin{figure}[ht]
+  \centering
+  \includegraphics[scale=0.6]{VAE.jpg}
+  \caption{编码器将图片信息编码变成潜在变量分布的参数，解码器将潜在变量解码还原成图片。}
+  \label{fig:VAE}
+\end{figure}
+\subsection{单隐层网络实验结果}
+\begin{figure}[h!]
+  \centering
+  \subfigure[原图像]{
+  \includegraphics[width=4.5cm]{./图片素材/DNN/500_label.jpg}
+  %\caption{fig1}
+  }
+  \quad
+  \subfigure[重建图像]{
+  \includegraphics[width=4.5cm]{./图片素材/DNN/500_pre.jpg}
+  }
+  \quad
+  \subfigure[生成图像]{
+  \includegraphics[width=4.5cm]{./图片素材/DNN/500_random.jpg}
+  }
+  \centering
+  \subfigure[训练过程的曲线图,每5个epoch记录一次]{
+  \includegraphics[width=17cm]{./图片素材/DNN/graph.png}
+  }
+  \caption{(a)(b)(c)分别为该网络对测试数据集的测试的原图像，重建图像和生成图像。(d)是模型训练过程的曲线图，可以发现KL散度先下降后上升。}
+\end{figure}
+图2是该网络的实验结果。能够看到，单隐藏层的网络已经能够很好地还原原始图像，重建图像也能够保留原图像很多重要的特征。并且通过随机采样，VAE能够产生很多和原数据很像的字符。
+观察训练过程的曲线图，模型的总损失被成功优化降低，KL散度呈现先下降后上升的趋势。
+\subsection{重建损失函数：交叉熵和平方差损失}
+MNIST手写数据集每个像素的数值是0-255的整数，所以实际上应该看成是多项式分布。但是由于相邻整数对应全局的差距很小，因此也可以近似看成连续的分布，
+可以采用平方差损失函数作为重建的损失函数。由于手写数据集的大多数像素都是黑白两色的特点，可以看成是二值的分布，因此也可以用交叉熵损失函数来估计误差。
+图3是单隐层的VAE神经网络在不同损失函数下的重建和生成图像。
+\begin{figure}[ht]
+  \centering
+  \subfigure[原图像]{
+  \includegraphics[width=4.5cm]{./图片素材/平方损失/500_label.jpg}
+  %\caption{fig1}
+  }
+  \quad
+  \subfigure[重建图像]{
+  \includegraphics[width=4.5cm]{./图片素材/平方损失/500_pre.jpg}
+  }
+  \quad
+  \subfigure[生成图像]{
+  \includegraphics[width=4.5cm]{./图片素材/平方损失/500_random.jpg}
+  }
+  \quad
+  \subfigure[原图像]{
+  \includegraphics[width=4.5cm]{./图片素材/交叉熵/500_label.jpg}
+  }
+  \quad
+  \subfigure[重建图像]{
+  \includegraphics[width=4.5cm]{./图片素材/交叉熵/500_pre.jpg}
+  }
+  \quad
+  \subfigure[生成图像]{
+  \includegraphics[width=4.5cm]{./图片素材/交叉熵/500_random.jpg}
+  }
+  \caption{(a)(b)(c)分别是单隐层VAE用平方损失函数训练的测试集的原图像，重建图像和生成图像。
+  (d)(e)(f)则分别是交叉熵损失函数的原图像，重建图像和生成图像。可以看到使用平方损失函数的重建结果较交叉熵的要模糊，而且背景有一层浅薄的灰色，整体效果交叉熵的表现要更好。}
+\end{figure}
+
+经过实验，交叉熵的效果比平方差要好，这说明交叉熵确实更适合由黑白颜色为主体的MNIST数据集的训练。
+\subsection{编码器与解码器为CNN的VAE}
+将上述的VAE模型加以改造，把编码器换成近似LeNet-5的网络，解码器则用编码器反向的网络搭建（卷积→反卷积，池化→反池化等）损失函数设为交叉熵，对这个新的模型进行
+测试，结果图4。
+\begin{figure}[ht]
+  \centering
+  \subfigure[原图像]{
+  \includegraphics[width=4.5cm]{./图片素材/CNN/500_label.jpg}
+  %\caption{fig1}
+  }
+  \quad
+  \subfigure[重建图像]{
+  \includegraphics[width=4.5cm]{./图片素材/CNN/500_pre.jpg}
+  }
+  \quad
+  \subfigure[生成图像]{
+  \includegraphics[width=4.5cm]{./图片素材/CNN/500_random.jpg}
+  }
+  \centering
+  \subfigure[训练过程的曲线图,每5个epoch记录一次]{
+  \includegraphics[width=17cm]{./图片素材/CNN/graph.png}
+  }
+  \caption{(a)(b)(c)分别为该网络对测试数据集的测试的原图像，重建图像和生成图像。(d)是模型训练过程的曲线图，KL散度先下降后上升。}
+\end{figure}
+
+可以看到该网络的重建结果更加完整，能够很好地还原出输入图片的形状，而且CNN网络的VAE生成的图片比DNN的也更加接近真实情况，这说明复杂的网络是有利于更好地提取图片的
+特征，输出更加真实的图片。
+\subsection{隐藏层的维度的影响}
+接下来我探究对比了潜在变量不同维度下生成图片的效果，结果如图4所示。可以发现随着设置的潜空间维度升高，生成图片的字体会变清晰，但是字体形状也会逐渐偏离实际的数据。
+\begin{figure}[ht]
+  \centering
+  \subfigure[3-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/3.jpg}
+  %\caption{fig1}
+  }
+  \quad
+  \subfigure[5-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/5.jpg}
+  }
+  \quad
+  \subfigure[10-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/10.jpg}
+  }
+  \quad
+  \subfigure[15-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/15.jpg}
+  }
+  \quad
+  \subfigure[20-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/20.jpg}
+  }
+  \quad
+  \subfigure[30-D 潜在变量]{
+  \includegraphics[width=4.5cm]{./图片素材/潜在变量/30.jpg}
+  }
+  \caption{可以发现随着维度升高，生成图片的字体会变清晰，但是字体形状也会逐渐偏离实际的数据的字体形状。}
+\end{figure}
+\subsection{关于其他分布的试验}
+最后我试验了一下用其他分布作为潜在变量分布的VAE模型的性能，这里用了刚才推导的柯西分布的结果，结果如图5所示。
+能够发现柯西分布的VAE模型也勉强能实现重建和生成图片的功能，但是无论是训练时间还是生成效果都比高斯分布的模型要差，
+而且网络很不稳定，训练过程容易发生梯度爆炸。
+\begin{figure}[h!]
+  \centering
+  \subfigure[原图像]{
+  \includegraphics[width=4.5cm]{./图片素材/柯西/500_label.jpg}
+  %\caption{fig1}
+  }
+  \quad
+  \subfigure[重建图像]{
+  \includegraphics[width=4.5cm]{./图片素材/柯西/500_pre.jpg}
+  }
+  \quad
+  \subfigure[生成图像]{
+  \includegraphics[width=4.5cm]{./图片素材/柯西/500_random.jpg}
+  }
+  \caption{(a)(b)(c)分别是柯西VAE模型对测试数据集的原图像，重建图像和生成图像，能够发现柯西分布的VAE模型也勉强能实现重建和生成图片的功能，但是生成的图片有很多是远远偏离正常形状的，其训练的效率和质量都不如高斯分布。}
+\end{figure}
+\section{总结}
+本次作业我从理论到实验探究了一遍变分自编码器VAE
+，在此过程中我了解到了无监督学习问题解决方案的思路，理解了生成模型的工作原理。VAE的核心思想是用MLP拟合潜在变量和可见变量之间的关系，然后用变分推断的方法导出优化的函数。
+事实上，变分推断的ELBO也叫变分自由能，优化其实就是改变参数使得变分自由能逐渐接近真自由能，并最小化真自由能的过程。由于实际自由能也总比变分自由能小，所以优化过程
+只需不断减小变分自由能即可\cite{1803.08823}。接下来我又搭建了不同结构的VAE网络进行实验，
+结果发现VAE确实能够较好地重建测试集图片，并且生成与数据集相似的图片，这也证明了VAE模型的正确性和可行性。
+\bibliographystyle{plain}
+\bibliography{ref1}
+\end{document}
